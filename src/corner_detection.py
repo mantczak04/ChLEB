@@ -109,7 +109,7 @@ def run_on_image(img_path):
     # 3. Wizualizacja
     plt.figure(figsize=(15,10))
     
-    plt.subplot(131)
+    plt.subplot(121)
     plt.imshow(img, cmap='gray')
     # Uwaga: matplotlib używa (x,y), numpy (row, col) -> (y,x)
     plt.plot(top_pts[:,1], top_pts[:,0], 'ro', markersize=2)
@@ -120,14 +120,68 @@ def run_on_image(img_path):
         plt.text(top_pts[i,1], top_pts[i,0], str(i), color='yellow', fontsize=8)
     plt.title(f'Found {len(top_pts)} saddle pts')
     
-    plt.subplot(132)
-    plt.imshow(raw_saddle, cmap='gray')
-    plt.title('Original Saddle Map')
-    
-    plt.subplot(133)
-    plt.imshow(nonmax_saddle_img, cmap='gray')
-    plt.title('NMS Pruned Saddle Map')
     
     plt.tight_layout()
     plt.show()
     print('Done')
+
+def chessboard_edge_detection(image):
+    """
+    looks for the biggest quadrangle
+    """
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(7,7))
+    image = clahe.apply(clahe)
+    #canny edge detector (on preprocessed image)
+    edges = cv2.Canny(image, 50, 150)
+    
+    # Dylatacja pogrubia krawędzie, żeby zamknąć ewentualne przerwy w obrysie planszy
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    dilated = cv2.dilate(edges, kernel, iterations=2)
+
+    #find contours
+    contours, _ = cv2.findContours(dilated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # Sortujemy kontury od największego (zakładamy, że plansza jest największa)
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:5]
+    vis = image.copy()
+
+
+    board_cnt = None
+    
+    for cnt in contours:
+        # Aproksymacja wielokąta (wygładzanie kształtu)
+        peri = cv2.arcLength(cnt, True)
+        # 0.02 to współczynnik precyzji - im wyższy, tym bardziej "kanciasty" kształt
+        approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+
+        cv2.drawContours(vis, cnt, -1, 255, 2)
+        plt.imshow(vis, cmap='gray')
+        plt.show()
+
+        # Szukamy figury, która ma 4 rogi i jest wystarczająco duża
+        if len(approx) == 4 and cv2.contourArea(approx) > 2000:
+            board_cnt = approx
+            break
+
+    result_image = image.copy()
+    
+    if board_cnt is not None:
+        # Konwersja formatu punktów do prostej macierzy (4, 2)
+        pts = board_cnt.reshape(4, 2)
+        rect = order_points(pts)
+        
+        # Wizualizacja: Rysujemy zieloną ramkę wokół znalezionej planszy
+        cv2.drawContours(result_image, [board_cnt], -1, (0, 255, 0), 3)
+        
+        # Oznaczamy rogi kolorami, żeby sprawdzić czy kolejność jest OK
+        colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)] # Niebieski, Zielony, Czerwony, Żółty
+        for i, (x, y) in enumerate(rect):
+            cv2.circle(result_image, (int(x), int(y)), 15, colors[i], -1)
+
+        # plt.subplot(122)
+        # plt.imshow(result_image, cmap='gray')
+        # plt.title('NMS Pruned Saddle Map')
+            
+        return rect, result_image
+    else:
+        return None, image

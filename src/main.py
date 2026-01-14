@@ -25,6 +25,8 @@ def main():
         img_processed = to_grayscale_blurred(img)
         corners = corner_detection.run_on_image(img_processed)
 
+        result = corner_detection.chessboard_edge_detection(img_processed)
+        
         
 
 if __name__ == "__main__":
