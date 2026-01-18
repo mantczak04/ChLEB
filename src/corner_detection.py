@@ -20,17 +20,27 @@ def load_image(img_path, out_size=500):
     return img
 
 def order_points(pts):
-    rect = np.zeros((4, 2), dtype="float32")
-    
-    s = pts.sum(axis=1)
-    rect[0] = pts[np.argmin(s)]
-    rect[2] = pts[np.argmax(s)]
+    """
+    Orders 4 points in the order: Top-Left, Top-Right, Bottom-Right, Bottom-Left.
+    This version is more robust for rotated quads than the sum-difference method.
+    """
+    # pts shape is (4, 2)
+    # 1. Sort the points based on their x-coordinates
+    x_sorted = pts[np.argsort(pts[:, 0]), :]
 
-    diff = np.diff(pts, axis=1)
-    rect[1] = pts[np.argmin(diff)]
-    rect[3] = pts[np.argmax(diff)]
+    # 2. Grab the left-most and right-most points
+    left_most = x_sorted[:2, :]
+    right_most = x_sorted[2:, :]
 
-    return rect
+    # 3. Sort left-most by y-coordinate to get Top-Left and Bottom-Left
+    left_most = left_most[np.argsort(left_most[:, 1]), :]
+    (tl, bl) = left_most
+
+    # 4. Sort right-most by y-coordinate to get Top-Right and Bottom-Right
+    right_most = right_most[np.argsort(right_most[:, 1]), :]
+    (tr, br) = right_most
+
+    return np.array([tl, tr, br, bl], dtype="float32")
 
 def get_raw_saddle(gray_img):
     # Oczekuje obrazu ~500x500 jako np array
@@ -125,63 +135,100 @@ def run_on_image(img_path):
     plt.show()
     print('Done')
 
-def chessboard_edge_detection(image):
+def calculate_squarishness(pts):
     """
-    looks for the biggest quadrangle
+    Calculates a score (0 to 1) of how 'squarish' a quadrilateral is.
+    Uses ratio of opposite sides and diagonals.
+    """
+    # pts: [tl, tr, br, bl]
+    # Side lengths
+    top = np.linalg.norm(pts[0] - pts[1])
+    right = np.linalg.norm(pts[1] - pts[2])
+    bottom = np.linalg.norm(pts[2] - pts[3])
+    left = np.linalg.norm(pts[3] - pts[0])
+    
+    # Diagonal lengths
+    diag1 = np.linalg.norm(pts[0] - pts[2])
+    diag2 = np.linalg.norm(pts[1] - pts[3])
+    
+    # Ratio of opposite sides
+    r_width = min(top, bottom) / max(top, bottom)
+    r_height = min(left, right) / max(left, right)
+    
+    # Ratio of diagonals
+    r_diag = min(diag1, diag2) / max(diag1, diag2)
+    
+    # Combine (simple average)
+    return (r_width + r_height + r_diag) / 3
+
+def chessboard_edge_detection(image, saddle_points=None):
+    """
+    looks for the biggest quadrangle that contains saddle points
     """
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(7,7))
-    image = clahe.apply(clahe)
-    #canny edge detector (on preprocessed image)
+    image = clahe.apply(image)
+    #canny edge detector
     edges = cv2.Canny(image, 50, 150)
     
-    # Dylatacja pogrubia krawędzie, żeby zamknąć ewentualne przerwy w obrysie planszy
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
     dilated = cv2.dilate(edges, kernel, iterations=2)
 
-    #find contours
     contours, _ = cv2.findContours(dilated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     
-    # Sortujemy kontury od największego (zakładamy, że plansza jest największa)
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:5]
-    vis = image.copy()
-
-
-    board_cnt = None
+    # Increase number of candidates
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:15]
+    
+    best_quad = None
+    best_score = -1
+    best_quality = 0
     
     for cnt in contours:
-        # Aproksymacja wielokąta (wygładzanie kształtu)
         peri = cv2.arcLength(cnt, True)
-        # 0.02 to współczynnik precyzji - im wyższy, tym bardziej "kanciasty" kształt
         approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
 
-        cv2.drawContours(vis, cnt, -1, 255, 2)
-        plt.imshow(vis, cmap='gray')
-        plt.show()
+        if len(approx) == 4 and cv2.contourArea(approx) > 3000:
+            # Order points to calculate metrics
+            pts = approx.reshape(4, 2)
+            rect = order_points(pts)
+            
+            # 1. Count saddle points
+            saddle_count = 0
+            if saddle_points is not None:
+                for pt in saddle_points:
+                    if cv2.pointPolygonTest(approx, (float(pt[1]), float(pt[0])), False) >= 0:
+                        saddle_count += 1
+            
+            # 2. Calculate squarishness
+            sq_score = calculate_squarishness(rect)
+            
+            # Combined score: prioritize saddle points, use squarishness as tie-breaker/refiner
+            # We want at least a few saddle points (e.g. > 10)
+            if saddle_count < 10:
+                continue
+                
+            # Score formula: (saddle points count) * (squarishness factor)
+            # Squarishness factor penalizes highly irregular shapes
+            current_score = saddle_count * (sq_score ** 2)
+            
+            if current_score > best_score:
+                best_score = current_score
+                best_quad = (rect, approx)
+                best_quality = sq_score
 
-        # Szukamy figury, która ma 4 rogi i jest wystarczająco duża
-        if len(approx) == 4 and cv2.contourArea(approx) > 2000:
-            board_cnt = approx
-            break
-
-    result_image = image.copy()
+    result_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     
-    if board_cnt is not None:
-        # Konwersja formatu punktów do prostej macierzy (4, 2)
-        pts = board_cnt.reshape(4, 2)
-        rect = order_points(pts)
+    if best_quad is not None:
+        rect, approx = best_quad
         
         # Wizualizacja: Rysujemy zieloną ramkę wokół znalezionej planszy
-        cv2.drawContours(result_image, [board_cnt], -1, (0, 255, 0), 3)
+        cv2.drawContours(result_image, [approx], -1, (0, 255, 0), 3)
         
         # Oznaczamy rogi kolorami, żeby sprawdzić czy kolejność jest OK
-        colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)] # Niebieski, Zielony, Czerwony, Żółty
+        # BGR Order: Blue (TL), Green (TR), Red (BR), Yellow (BL)
+        colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (0, 255, 255)] 
         for i, (x, y) in enumerate(rect):
             cv2.circle(result_image, (int(x), int(y)), 15, colors[i], -1)
-
-        # plt.subplot(122)
-        # plt.imshow(result_image, cmap='gray')
-        # plt.title('NMS Pruned Saddle Map')
             
-        return rect, result_image
+        return rect, result_image, best_quality
     else:
-        return None, image
+        return None, image, 0
