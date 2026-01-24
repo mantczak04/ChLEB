@@ -8,15 +8,33 @@ import numpy as np
 import random
 
 import matplotlib.pyplot as plt
+from ultralytics import YOLO
+
+MODEL_PATH = 'best.pt'
+CONF_THRESHOLD = 0.5
+
+# Mapa nazw klas z modelu na znaki FEN
+CLASS_TO_FEN = {
+    'white-pawn': 'P', 'white-rook': 'R', 'white-knight': 'N', 'white-bishop': 'B', 'white-queen': 'Q', 'white-king': 'K',
+    'black-pawn': 'p', 'black-rook': 'r', 'black-knight': 'n', 'black-bishop': 'b', 'black-queen': 'q', 'black-king': 'k'
+}
 
 def main():
+    # Load model
+    try:
+        model = YOLO(MODEL_PATH)
+        print(f"Model loaded from {MODEL_PATH}")
+    except Exception as e:
+        print(f"Could not load model: {e}")
+        return
+
     data_library = Path("data")
 
     image_extensions = [".jpg", ".png"]
 
     images = [f for f in data_library.iterdir() if f.suffix.lower() in image_extensions]
 
-    random_samples = 10
+    random_samples = 3
     random_images = random.sample(images, random_samples)
     for img_path in random_images:
         print(f"working on {img_path.name}...")
@@ -40,29 +58,26 @@ def main():
             # 3. Warp perspective
             warped = warp_chessboard(img, rect)
             
-            # 4. Slice board into 8x8 grid
+            # 4. Slice board into 8x8 grid (keeping for visualization but we can run YOLO on warped)
             squares, board_with_grid = slice_board(warped)
             
-            # 5. Show results using matplotlib
+            # 5. Run piece detection
+            results = model.predict(warped, conf=CONF_THRESHOLD, verbose=False)
+            print(f"Detected {len(results[0])} pieces in {img_path.name}")
+            
+            # 6. Show results using matplotlib
             plt.figure(figsize=(15, 5))
             
-            plt.subplot(131)
+            plt.subplot(121)
             plt.imshow(cv2.cvtColor(board_img, cv2.COLOR_BGR2RGB))
-            plt.title(f"Board Det: {img_path.name} (Q: {quality:.2f})")
+            plt.title(f"Board Det: {img_path.name}")
             plt.axis('off')
 
-            plt.subplot(132)
-            plt.imshow(cv2.cvtColor(board_with_grid, cv2.COLOR_BGR2RGB))
-            plt.title("Warped Board with Grid")
-            plt.axis('off')
-
-            # Show a few sample squares (e.g. from the first row) in the third subplot
-            plt.subplot(133)
-            # Create a small montage of the first 4 squares
-            sample_squares = squares[0][:4]
-            montage = np.hstack([cv2.resize(s, (100, 100)) for s in sample_squares])
-            plt.imshow(cv2.cvtColor(montage, cv2.COLOR_BGR2RGB))
-            plt.title("Sample Squares (0:0-0:3)")
+            plt.subplot(122)
+            # Use YOLO's build-in visualization for detections
+            res_plotted = results[0].plot()
+            plt.imshow(cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB))
+            plt.title("Detected Pieces")
             plt.axis('off')
 
             plt.show()
