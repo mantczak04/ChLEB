@@ -47,7 +47,7 @@ def get_raw_saddle(gray_img):
     img = gray_img.astype(np.float64)
 
     # Blur (3,3) - redukcja szumu przed pochodnymi
-    img = cv2.blur(img, (3,3))
+    img = cv2.blur(img, (5,5))
 
     gx = cv2.Sobel(img, cv2.CV_64F, 1, 0)
     gy = cv2.Sobel(img, cv2.CV_64F, 0, 1)
@@ -60,7 +60,7 @@ def get_raw_saddle(gray_img):
     S = np.abs(gxx*gyy - gxy**2)
     return S
 
-def nonmax_sup(img, win=10):
+def nonmax_sup(img, win=5):
     dilated = cv2.dilate(img, np.ones((2*win+1, 2*win+1), np.uint8))
 
     local_max = (img == dilated)
@@ -184,9 +184,9 @@ def chessboard_edge_detection(image, saddle_points=None):
     
     for cnt in contours:
         peri = cv2.arcLength(cnt, True)
-        approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+        approx = cv2.approxPolyDP(cnt, 0.03 * peri, True)
 
-        if len(approx) == 4 and cv2.contourArea(approx) > 3000:
+        if len(approx) == 4 and cv2.contourArea(approx) > 2000:
             # Order points to calculate metrics
             pts = approx.reshape(4, 2)
             rect = order_points(pts)
@@ -203,7 +203,7 @@ def chessboard_edge_detection(image, saddle_points=None):
             
             # Combined score: prioritize saddle points, use squarishness as tie-breaker/refiner
             # We want at least a few saddle points (e.g. > 10)
-            if saddle_count < 10:
+            if saddle_count < 6:
                 continue
                 
             # Score formula: (saddle points count) * (squarishness factor)

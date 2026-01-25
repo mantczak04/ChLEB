@@ -10,8 +10,8 @@ import random
 import matplotlib.pyplot as plt
 from ultralytics import YOLO
 
-MODEL_PATH = 'best.pt'
-CONF_THRESHOLD = 0.5
+MODEL_PATH = 'nano_finetuned.pt'
+CONF_THRESHOLD = 0.65
 
 # Mapa nazw klas z modelu na znaki FEN
 CLASS_TO_FEN = {
@@ -34,7 +34,7 @@ def main():
 
     images = [f for f in data_library.iterdir() if f.suffix.lower() in image_extensions]
 
-    random_samples = 3
+    random_samples = 5
     random_images = random.sample(images, random_samples)
     for img_path in random_images:
         print(f"working on {img_path.name}...")
