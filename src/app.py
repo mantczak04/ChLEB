@@ -28,7 +28,19 @@ model_option = st.sidebar.selectbox(
 )
 
 # Confidence threshold
-conf_threshold = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.65, 0.05)
+conf_threshold = st.sidebar.slider("YOLO Confidence Threshold", 0.0, 1.0, 0.65, 0.05)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Chessboard Detection Params")
+canny_low = st.sidebar.slider("Canny Low Threshold", 0, 255, 50)
+canny_high = st.sidebar.slider("Canny High Threshold", 0, 255, 150)
+approx_epsilon = st.sidebar.slider("Approx Poly Epsilon", 0.01, 0.10, 0.03, 0.005)
+min_area_ratio = st.sidebar.slider("Min Board Area (% of image)", 0.0, 1.0, 0.01, 0.01)
+min_saddle = st.sidebar.number_input("Min Saddle Points", value=6, step=1)
+
+# Additional output settings
+st.sidebar.markdown("---")
+show_steps = st.sidebar.checkbox("Show Processing Steps")
 
 # Image uploader
 uploaded_file = st.file_uploader("Choose a chessboard image...", type=["jpg", "jpeg", "png"])
@@ -52,14 +64,42 @@ if uploaded_file is not None:
         saddle_points, _, _ = corner_detection.get_saddle_points(pil_img)
 
         # 2. Detect chessboard edges
-        rect, board_img, quality = corner_detection.chessboard_edge_detection(img_processed, saddle_points)
+        rect, board_img, quality, edges_img, contours = corner_detection.chessboard_edge_detection(
+            img_processed, 
+            saddle_points,
+            canny_thresholds=(canny_low, canny_high),
+            approx_epsilon=approx_epsilon,
+            min_area_ratio=min_area_ratio,
+            min_saddle=min_saddle
+        )
         
         if rect is not None:
             st.image(cv2.cvtColor(board_img, cv2.COLOR_BGR2RGB), caption=f"Detected Board (Quality: {quality:.2f})")
         else:
             st.warning("Could not find chessboard in the image.")
             st.image(cv2.cvtColor(img_500, cv2.COLOR_BGR2RGB), caption="Original Image")
+
+    if show_steps:
+        st.markdown("---")
+        st.subheader("Processing Steps")
+        step_col1, step_col2, step_col3 = st.columns(3)
+        
+        with step_col1:
+            # Draw saddle points
+            saddle_vis = img_500.copy()
+            for pt in saddle_points:
+                cv2.circle(saddle_vis, (int(pt[1]), int(pt[0])), 3, (0, 0, 255), -1)
+            st.image(cv2.cvtColor(saddle_vis, cv2.COLOR_BGR2RGB), caption=f"Saddle Points ({len(saddle_points)} found)")
             
+        with step_col2:
+            st.image(edges_img, caption="Dilated Edges (Canny + Morph)")
+            
+        with step_col3:
+            # Draw top contours
+            contour_vis = img_500.copy()
+            cv2.drawContours(contour_vis, contours, -1, (0, 255, 0), 2)
+            st.image(cv2.cvtColor(contour_vis, cv2.COLOR_BGR2RGB), caption=f"Top {len(contours)} Contours")
+
     with col2:
         st.subheader("Piece Detection")
         

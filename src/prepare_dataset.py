@@ -48,7 +48,7 @@ def prepare_yolo_dataset(source_dir, target_dir, output_size=800):
         saddle_points, _, _ = corner_detection.get_saddle_points(pil_img_500)
         
         # 3. Detect chessboard edges
-        rect, _, quality = corner_detection.chessboard_edge_detection(img_gray, saddle_points)
+        rect, _, quality, _, _ = corner_detection.chessboard_edge_detection(img_gray, saddle_points, min_area_ratio=0.01)
         
         if rect is not None:
             # 4. Scale detect points back to original image size

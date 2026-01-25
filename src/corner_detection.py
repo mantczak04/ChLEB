@@ -161,14 +161,17 @@ def calculate_squarishness(pts):
     # Combine (simple average)
     return (r_width + r_height + r_diag) / 3
 
-def chessboard_edge_detection(image, saddle_points=None):
+def chessboard_edge_detection(image, saddle_points=None, canny_thresholds=(50, 150), approx_epsilon=0.03, min_area_ratio=0.01, min_saddle=6):
     """
     looks for the biggest quadrangle that contains saddle points
     """
+    h, w = image.shape[:2]
+    total_area = h * w
+    
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(7,7))
     image = clahe.apply(image)
     #canny edge detector
-    edges = cv2.Canny(image, 50, 150)
+    edges = cv2.Canny(image, canny_thresholds[0], canny_thresholds[1])
     
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
     dilated = cv2.dilate(edges, kernel, iterations=2)
@@ -176,7 +179,7 @@ def chessboard_edge_detection(image, saddle_points=None):
     contours, _ = cv2.findContours(dilated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     
     # Increase number of candidates
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:15]
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:10]
     
     best_quad = None
     best_score = -1
@@ -184,9 +187,9 @@ def chessboard_edge_detection(image, saddle_points=None):
     
     for cnt in contours:
         peri = cv2.arcLength(cnt, True)
-        approx = cv2.approxPolyDP(cnt, 0.03 * peri, True)
+        approx = cv2.approxPolyDP(cnt, approx_epsilon * peri, True)
 
-        if len(approx) == 4 and cv2.contourArea(approx) > 2000:
+        if len(approx) == 4 and cv2.contourArea(approx) > (min_area_ratio * total_area):
             # Order points to calculate metrics
             pts = approx.reshape(4, 2)
             rect = order_points(pts)
@@ -202,8 +205,8 @@ def chessboard_edge_detection(image, saddle_points=None):
             sq_score = calculate_squarishness(rect)
             
             # Combined score: prioritize saddle points, use squarishness as tie-breaker/refiner
-            # We want at least a few saddle points (e.g. > 10)
-            if saddle_count < 6:
+            # We want at least a few saddle points
+            if saddle_count < min_saddle:
                 continue
                 
             # Score formula: (saddle points count) * (squarishness factor)
@@ -219,16 +222,11 @@ def chessboard_edge_detection(image, saddle_points=None):
     
     if best_quad is not None:
         rect, approx = best_quad
-        
-        # Wizualizacja: Rysujemy zieloną ramkę wokół znalezionej planszy
         cv2.drawContours(result_image, [approx], -1, (0, 255, 0), 3)
-        
-        # Oznaczamy rogi kolorami, żeby sprawdzić czy kolejność jest OK
-        # BGR Order: Blue (TL), Green (TR), Red (BR), Yellow (BL)
         colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (0, 255, 255)] 
         for i, (x, y) in enumerate(rect):
             cv2.circle(result_image, (int(x), int(y)), 15, colors[i], -1)
             
-        return rect, result_image, best_quality
+        return rect, result_image, best_quality, dilated, contours
     else:
-        return None, image, 0
+        return None, image, 0, dilated, contours
