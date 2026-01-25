@@ -13,7 +13,7 @@ from ultralytics import YOLO
 MODEL_PATH = 'nano_finetuned.pt'
 CONF_THRESHOLD = 0.65
 
-# Mapa nazw klas z modelu na znaki FEN
+#yolo classes to fen equivalent
 CLASS_TO_FEN = {
     'white-pawn': 'P', 'white-rook': 'R', 'white-knight': 'N', 'white-bishop': 'B', 'white-queen': 'Q', 'white-king': 'K',
     'black-pawn': 'p', 'black-rook': 'r', 'black-knight': 'n', 'black-bishop': 'b', 'black-queen': 'q', 'black-king': 'k'
@@ -58,8 +58,8 @@ def main():
             # 3. Warp perspective
             warped = warp_chessboard(img, rect)
             
-            # 4. Slice board into 8x8 grid (keeping for visualization but we can run YOLO on warped)
-            squares, board_with_grid = slice_board(warped)
+            #board slice #deparcated
+            #squares, board_with_grid = slice_board(warped)
             
             # 5. Run piece detection
             results = model.predict(warped, conf=CONF_THRESHOLD, verbose=False)

@@ -6,26 +6,21 @@ import matplotlib.pyplot as plt
 
 def load_image(img_path, out_size=500):
     """
-    loads an image and scale it to 500x500 for looking for X-corners
-    img_path: string (ścieżka) lub numpy array
+    loads an image and scale it to 500x500 to look for X-corners
     """
     if isinstance(img_path, np.ndarray):
-        # Jeśli to już array, konwertuj do PIL
-        img_orig = PIL.Image.fromarray(img_path)
+        img_orig = PIL.Image.fromarray(img_path) #shit with pil/nparray
     else:
-        # Jeśli to ścieżka
         img_orig = PIL.Image.open(img_path)
     
     img = img_orig.resize((out_size, out_size), resample=PIL.Image.BILINEAR)
     return img
 
-def order_points(pts):
+def order_points(pts): #deprecated for now
     """
     Orders 4 points in the order: Top-Left, Top-Right, Bottom-Right, Bottom-Left.
     This version is more robust for rotated quads than the sum-difference method.
     """
-    # pts shape is (4, 2)
-    # 1. Sort the points based on their x-coordinates
     x_sorted = pts[np.argsort(pts[:, 0]), :]
 
     # 2. Grab the left-most and right-most points
@@ -43,7 +38,7 @@ def order_points(pts):
     return np.array([tl, tr, br, bl], dtype="float32")
 
 def get_raw_saddle(gray_img):
-    # Oczekuje obrazu ~500x500 jako np array
+    # gets nparray 500x500 as input
     img = gray_img.astype(np.float64)
 
     # Blur (3,3) - redukcja szumu przed pochodnymi
@@ -56,7 +51,6 @@ def get_raw_saddle(gray_img):
     gxy = cv2.Sobel(gx, cv2.CV_64F, 0, 1)
     
     # Hessian: det(H) = gxx*gyy - gxy^2
-    # X-corners mają silną negatywną odpowiedź, bierzemy abs dla wizualizacji/score
     S = np.abs(gxx*gyy - gxy**2)
     return S
 
@@ -73,58 +67,54 @@ def prune_saddle(x, threshold=128, score_threshold=10_000):
     score = np.count_nonzero(x > 0)
     current_thresh = threshold
     
-    # Pętla zwiększa próg, aż liczba punktów spadnie poniżej limitu
+    # zwiekszamy prog az liczba spadnie ponizjej
     while score > score_threshold:
         current_thresh *= 2
         x[x < current_thresh] = 0
         score = np.count_nonzero(x > 0)
 
 def get_saddle_points(img):
-    # Konwersja PIL -> Numpy grayscale
+    # to grayscale
     gray_img = np.array(img.convert('L'))
 
     start_time = time.time()
     saddle_img = get_raw_saddle(gray_img)
     raw_saddle = saddle_img.copy()
     
-    # Pruning (wstępne czyszczenie słabych punktów)
+    #pruning (whatever is this)
     prune_saddle(saddle_img)
     
     # Non-Maximum Suppression
     nonmax_saddle_img = nonmax_sup(saddle_img, win=10)
 
-    # Wyciąganie współrzędnych
     pts = np.argwhere(nonmax_saddle_img)
 
     print(pts.shape, pts.dtype)
     if(len(pts) == 0):
         print('blad')
     
-    # POPRAWKA: Było pts[:0] (pusty slice), ma być pts[:,0]
     saddle_scores = nonmax_saddle_img[pts[:,0], pts[:,1]]
     
-    ordering = np.argsort(saddle_scores)[::-1] # Sortowanie malejąco
+    ordering = np.argsort(saddle_scores)[::-1] 
     top_pts = pts[ordering]
 
     print(f"Znaleziono punktów: {len(top_pts)} (czas: {time.time()-start_time:.3f}s)")
     return top_pts, nonmax_saddle_img, raw_saddle
 
 def run_on_image(img_path):
-    # 1. Wczytanie i resize do 500x500
+    # resize to 500x500
     img = load_image(img_path)
 
-    # 2. Wykrywanie punktów siodłowych
+    #detect x-corners
     top_pts, nonmax_saddle_img, raw_saddle = get_saddle_points(img)
     
-    # 3. Wizualizacja
     plt.figure(figsize=(15,10))
     
     plt.subplot(121)
     plt.imshow(img, cmap='gray')
-    # Uwaga: matplotlib używa (x,y), numpy (row, col) -> (y,x)
     plt.plot(top_pts[:,1], top_pts[:,0], 'ro', markersize=2)
     
-    # Podpisz 50 najsilniejszych punktów
+    #top 50 xcorner points
     label_k = min(50, len(top_pts))
     for i in range(label_k):
         plt.text(top_pts[i,1], top_pts[i,0], str(i), color='yellow', fontsize=8)
@@ -178,7 +168,7 @@ def chessboard_edge_detection(image, saddle_points=None, canny_thresholds=(50, 1
 
     contours, _ = cv2.findContours(dilated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     
-    # Increase number of candidates
+    #how many candidates to consider best contours? sorted by area
     contours = sorted(contours, key=cv2.contourArea, reverse=True)[:10]
     
     best_quad = None
@@ -201,11 +191,10 @@ def chessboard_edge_detection(image, saddle_points=None, canny_thresholds=(50, 1
                     if cv2.pointPolygonTest(approx, (float(pt[1]), float(pt[0])), False) >= 0:
                         saddle_count += 1
             
-            # 2. Calculate squarishness
+            # how "squary" is the shape [0;1]
             sq_score = calculate_squarishness(rect)
             
-            # Combined score: prioritize saddle points, use squarishness as tie-breaker/refiner
-            # We want at least a few saddle points
+            #counting x-corners inside the shape to make sure its a chessboard
             if saddle_count < min_saddle:
                 continue
                 

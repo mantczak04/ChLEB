@@ -21,7 +21,7 @@ def warp_chessboard(image, pts, size=800):
     warped = cv2.warpPerspective(image, M, (size, size))
     return warped
 
-def slice_board(warped_image, margin_ratio=0.08):
+def slice_board(warped_image, margin_ratio=0.08): #deprecated
     """
     Slices the warped board into an 8x8 list of square images.
     margin_ratio: how much of the border to skip (0.06 means 6% margin on each side)

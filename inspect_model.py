@@ -2,7 +2,7 @@ from ultralytics import YOLO
 import sys
 
 try:
-    model = YOLO("best.pt")
+    model = YOLO("medium_finetuned.pt")
     print(f"Model task: {model.task}")
     print(f"Model names: {model.names}")
 except Exception as e:

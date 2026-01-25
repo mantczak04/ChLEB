@@ -12,6 +12,7 @@ def prepare_yolo_dataset(source_dir, target_dir, output_size=800):
     """
     Takes every image from source_dir, detects the chessboard, 
     warps it, and saves it to target_dir.
+    used to finetune yolo model on my ChessRed2K dataset
     """
     source_path = Path(source_dir)
     target_path = Path(target_dir)
